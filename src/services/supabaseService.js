@@ -38,7 +38,7 @@ async function upsertPracticeData(dateStr, payload) {
       github: payload.github || false,
       writing_submitted: payload.writing_submitted || false,
       writing_chars: payload.writing_chars || 0,
-      speaking_detected: payload.speaking_detected || false,
+      writing_words: payload.writing_words || 0,
       notes: payload.notes || null,
       updated_at: new Date().toISOString()
     };
