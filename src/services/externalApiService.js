@@ -94,68 +94,85 @@ async function fetchGitHubContributions(username, startDate, endDate) {
  */
 async function fetchLeetCodeSubmissions(username, startDate, endDate) {
   try {
-    // LeetCode GraphQL API
-    const query = `
-      query recentAcSubmissions($username: String!, $limit: Int!) {
-        recentAcSubmissionList(username: $username, limit: $limit) {
-          timestamp
-          title
-          titleSlug
-        }
-      }
-    `;
-
-    const response = await axios.post(
-      'https://leetcode.com/graphql',
-      {
-        query,
-        variables: {
-          username,
-          limit: 500, // Fetch up to 500 recent submissions
-        },
-      },
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          'Referer': 'https://leetcode.com',
-        },
-      }
-    );
-
-    if (response.data.errors) {
-      console.error('LeetCode API errors:', response.data.errors);
-      throw new Error(response.data.errors[0]?.message || 'LeetCode API error');
+    // Get the year from the date range to fetch calendar
+    const startYear = new Date(startDate).getFullYear();
+    const endYear = new Date(endDate).getFullYear();
+    
+    // Fetch calendar data for all years in range
+    const years = [];
+    for (let year = startYear; year <= endYear; year++) {
+      years.push(year);
     }
-
-    const submissions = response.data.data?.recentAcSubmissionList || [];
-
-    // Filter by date range and group by date
-    const start = new Date(startDate);
-    const end = new Date(endDate);
+    
     const dataByDate = {};
-
-    submissions.forEach(submission => {
-      const submissionDate = new Date(parseInt(submission.timestamp) * 1000);
-      
-      if (submissionDate >= start && submissionDate <= end) {
-        const dateStr = submissionDate.toISOString().split('T')[0];
-        
-        if (!dataByDate[dateStr]) {
-          dataByDate[dateStr] = {
-            date: dateStr,
-            leetcode: true,
-            leetcode_count: 0,
-            problems: [],
-          };
+    
+    // Fetch data for each year
+    for (const year of years) {
+      const query = `
+        query userProfileCalendar($username: String!, $year: Int) {
+          matchedUser(username: $username) {
+            userCalendar(year: $year) {
+              activeYears
+              streak
+              totalActiveDays
+              submissionCalendar
+            }
+          }
         }
+      `;
+
+      const response = await axios.post(
+        'https://leetcode.com/graphql',
+        {
+          query,
+          variables: {
+            username,
+            year,
+          },
+          operationName: 'userProfileCalendar',
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Referer': 'https://leetcode.com',
+          },
+        }
+      );
+
+      if (response.data.errors) {
+        console.error('LeetCode API errors:', response.data.errors);
+        throw new Error(response.data.errors[0]?.message || 'LeetCode API error');
+      }
+
+      const submissionCalendar = response.data.data?.matchedUser?.userCalendar?.submissionCalendar;
+      
+      if (submissionCalendar) {
+        // Parse the submission calendar JSON string
+        const submissions = JSON.parse(submissionCalendar);
         
-        dataByDate[dateStr].leetcode_count++;
-        dataByDate[dateStr].problems.push({
-          title: submission.title,
-          slug: submission.titleSlug,
+        // Convert timestamps to dates and filter by date range
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        
+        Object.entries(submissions).forEach(([timestamp, count]) => {
+          const submissionDate = new Date(parseInt(timestamp) * 1000);
+          
+          if (submissionDate >= start && submissionDate <= end) {
+            const dateStr = submissionDate.toISOString().split('T')[0];
+            
+            if (!dataByDate[dateStr]) {
+              dataByDate[dateStr] = {
+                date: dateStr,
+                leetcode: true,
+                leetcode_count: 0,
+              };
+            }
+            
+            dataByDate[dateStr].leetcode_count += count;
+          }
         });
       }
-    });
+    }
 
     return dataByDate;
   } catch (error) {
@@ -217,7 +234,6 @@ async function fetchCombinedPracticeData(githubUsername, leetcodeUsername, start
         github_count: github.github_count || 0,
         leetcode: leetcode.leetcode || false,
         leetcode_count: leetcode.leetcode_count || 0,
-        leetcode_problems: leetcode.problems || [],
         // English practice data from database
         writing_submitted: dbRecord.writing_submitted || false,
         writing_chars: dbRecord.writing_chars || 0,
